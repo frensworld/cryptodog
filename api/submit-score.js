@@ -69,7 +69,7 @@ module.exports = async function handler(req, res) {
   if (typeof coins !== "number" || coins < MIN_COINS) {
     return res.status(400).json({ error: "Not enough coins." });
   }
-  const maxPlausible = (coins * 100) + 10000;
+  const maxPlausible = (coins * 100) + 25000;
   if (score > maxPlausible) {
     return res.status(400).json({ error: "Score not plausible." });
   }
