@@ -1,5 +1,4 @@
 const { createClient } = require("@supabase/supabase-js");
-const { activeSessions } = require("./start-session");
 
 const SUPABASE_URL = process.env.SUPABASE_URL;
 const SUPABASE_SERVICE_KEY = process.env.SUPABASE_SERVICE_KEY;
@@ -28,14 +27,14 @@ function checkRateLimit(ip) {
   return true;
 }
 
-function setCORS(req, res) {
+function setCORS(res) {
   res.setHeader("Access-Control-Allow-Origin", "*");
   res.setHeader("Access-Control-Allow-Methods", "POST, OPTIONS");
   res.setHeader("Access-Control-Allow-Headers", "Content-Type");
 }
 
 module.exports = async function handler(req, res) {
-  setCORS(req, res);
+  setCORS(res);
   if (req.method === "OPTIONS") return res.status(200).end();
   if (req.method !== "POST") {
     return res.status(405).json({ error: "Method not allowed" });
@@ -45,14 +44,22 @@ module.exports = async function handler(req, res) {
     return res.status(429).json({ error: "Too many requests." });
   }
   const { playerName, score, coins, sessionToken } = req.body;
-  if (!sessionToken || !activeSessions.has(sessionToken)) {
+  if (!sessionToken) {
+    return res.status(400).json({ error: "Missing session token." });
+  }
+  const db = createClient(SUPABASE_URL, SUPABASE_SERVICE_KEY);
+  const { data: session, error: sessionError } = await db
+    .from("sessions")
+    .select("*")
+    .eq("token", sessionToken)
+    .single();
+  if (sessionError || !session) {
     return res.status(400).json({ error: "Invalid session." });
   }
-  const session = activeSessions.get(sessionToken);
-  if (!session.flagReached) {
+  if (!session.flag_reached) {
     return res.status(400).json({ error: "Flag not reached." });
   }
-  const serverPlayTime = (Date.now() - session.startTime) / 1000;
+  const serverPlayTime = (Date.now() - session.start_time) / 1000;
   if (serverPlayTime < MIN_PLAY_SECONDS) {
     return res.status(400).json({ error: "Game too short." });
   }
@@ -70,9 +77,8 @@ module.exports = async function handler(req, res) {
     .replace(/[^a-zA-Z0-9_ \-\.]/g, "")
     .substring(0, 16)
     .trim() || "ANON";
-  activeSessions.delete(sessionToken);
+  await db.from("sessions").delete().eq("token", sessionToken);
   try {
-    const db = createClient(SUPABASE_URL, SUPABASE_SERVICE_KEY);
     const { data: existing } = await db
       .from("leaderboard")
       .select("score")
